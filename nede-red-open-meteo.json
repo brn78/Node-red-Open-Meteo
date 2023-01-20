@@ -1,0 +1,310 @@
+[
+    {
+        "id": "be06336523247ac6",
+        "type": "subflow",
+        "name": "Open Meteo",
+        "info": "Template {{latitude}} e {{longitude}}, output msg.meteo",
+        "category": "Open Meteo",
+        "in": [
+            {
+                "x": 50,
+                "y": 80,
+                "wires": [
+                    {
+                        "id": "e48125a6c2df571c"
+                    },
+                    {
+                        "id": "b06e1993859f7687"
+                    }
+                ]
+            }
+        ],
+        "out": [
+            {
+                "x": 780,
+                "y": 80,
+                "wires": [
+                    {
+                        "id": "ad8b5c77a2084833",
+                        "port": 0
+                    },
+                    {
+                        "id": "eb7f0eae089a1544",
+                        "port": 1
+                    }
+                ]
+            }
+        ],
+        "env": [
+            {
+                "name": "latitude",
+                "type": "str",
+                "value": "msg.latitude",
+                "ui": {
+                    "icon": "font-awesome/fa-code",
+                    "label": {
+                        "en-US": "Template latitude:"
+                    },
+                    "type": "input",
+                    "opts": {
+                        "types": [
+                            "str"
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "longitude",
+                "type": "str",
+                "value": "msg.longitude",
+                "ui": {
+                    "icon": "font-awesome/fa-code",
+                    "label": {
+                        "en-US": "Template longitude:"
+                    },
+                    "type": "input",
+                    "opts": {
+                        "types": [
+                            "str"
+                        ]
+                    }
+                }
+            },
+            {
+                "name": "message",
+                "type": "str",
+                "value": "meteo",
+                "ui": {
+                    "icon": "font-awesome/fa-send",
+                    "label": {
+                        "en-US": "Message:"
+                    },
+                    "type": "input",
+                    "opts": {
+                        "types": [
+                            "str"
+                        ]
+                    }
+                }
+            }
+        ],
+        "meta": {
+            "module": "nede-red-open-meteo",
+            "version": "1.0.5",
+            "author": "Bruno Leonardi <b.leonardi78@gmail.com>",
+            "desc": "Open Meteo",
+            "keywords": "meteo, previsioni, tempo, weather",
+            "license": "MIT"
+        },
+        "color": "#3FADB5",
+        "inputLabels": [
+            "Template di {{latitude}} e {{longitude}}"
+        ],
+        "outputLabels": [
+            "msg.meteo"
+        ],
+        "icon": "font-awesome/fa-thermometer-2",
+        "status": {
+            "x": 730,
+            "y": 140,
+            "wires": [
+                {
+                    "id": "ff3ffe8079ea5eb5",
+                    "port": 0
+                }
+            ]
+        }
+    },
+    {
+        "id": "eb7f0eae089a1544",
+        "type": "function",
+        "z": "be06336523247ac6",
+        "name": "Request",
+        "func": "//https://open-meteo.com/en/docs\n\n////////////////////////////////////////////////////////////////////\n////////////////////////////////////////////////////////////////////\n////////////////////////////////////////////////////////////////////\n\n/**\n * {{Template}} - Restituisce il template elaborato\n * @param {string} string Testo da processare\n * @param {string[]} flags Delimitatori del valore, default ['{{', '}}'] \n */\nfunction Template(string, flags = ['{{', '}}']) {\n    if (string === null || string === undefined || typeof string !== 'string') return string\n    if (string.trim() == '') return string\n    let re = new RegExp(flags[0] + '(.*?)' + flags[1], 'gmi')\n    let match = string.match(re)\n    if (!match) return string\n    if (match && match.length > 0) {\n        for (let index = 0; index < match.length; index++) {\n            const element = match[index]\n            let value = JSGet(element.substr(flags[0].length, element.length - (flags[0].length + flags[1].length)))\n            string = String.raw`${string}`.replace(element, value)\n        }\n\n    }\n\n    return string\n}\n\n/**\n * Ricerca le chievi in un oggetto JSON e restituisce il valore o le proprietà\n * @param {string | string []} args args = 'key' || 'key.subkey.{what}' || 'key.*.{what}' || ['key', 'subkey', '{what}'] || ['key', '*', '{what}']\n * @param {string | string []} args {what} = $type || $keys || $first_key || $last_key || $root || $boolean || $object || $...> (ultimo risultato)\n * @param {NodeMessage | {} | []} object Oggetto sul quale effettuare la ricerca\n */\nfunction JSGet(args, object = msg) {\n    //creo una copia di object\n    object = RED.util.cloneMessage(object)\n\n    //definisci le chiavi\n    if (!args || (typeof args === 'string' && !args.trim())) {\n        return null\n    } else if (typeof args === 'string') {\n        //crea una array di chiavi\n        args = args.split('.')\n    } else if (!Array.isArray(args)) {\n        return null\n    }\n\n    //chiave primaria\n    var key = args[0]\n    if (!key) return null\n    if (typeof key !== 'string') return null\n    if (key == '') return null\n\n    //chiave secondaria\n    var subKey = (args.length == 2) ? args[1] : null\n    if (subKey && (subKey == '*' || subKey == '')) subKey = null\n\n    //risultato richiesto\n    var what = (args.length == 3) ? args[2] : ''\n\n    //definisci l'oggetto, deve essere un JSON\n    if (object && typeof object === 'object' && Array.isArray(object) && object.length > 0) {\n        //se è una array lo converto\n        Object.assign({}, object)\n    } else if (typeof object === 'string') {\n        //se è un JSON string lo converto\n        try {\n            object = JSON.parse(object)\n        } catch (error) {\n            return null\n        }\n    }\n\n    //se non è un JSON restituisco null\n    if (!object || (Object.keys(object).length == 0 && object.constructor === Object)) {\n        return null\n    }\n\n    //risultati della ricerca\n    var result = null\n\n    //ricerca in profondità la chiave nell'oggetto\n    var searchDeep = function SearchDeep(/** @type {{ [x: string]: any; hasOwnProperty: (arg0: string) => any; }} */ object, /** @type {string} */ rootKeys) {\n        //percorso della chiave\n        var root = function GetRootKey(/** @type {string} */ addKey) {\n            return rootKeys ? `${rootKeys}.${addKey}` : addKey\n        }\n\n        //chiave trovata\n        if (object && object.hasOwnProperty(key)) {\n            //se vuota assegna key\n            if (!rootKeys) rootKeys = key\n\n            if (subKey && object[key].hasOwnProperty(subKey)) {\n                result = {\n                    value: object[key][subKey],\n                    type: typeof object[key][subKey],\n                    keys: rootKeys.split('.').length,\n                    first_key: rootKeys.split('.')[0],\n                    last_key: (rootKeys.split('.').length > 0) ? rootKeys.split('.')[rootKeys.split('.').length - 1] : rootKeys.split('.')[0],\n                    root: rootKeys\n                }\n            } else if (!subKey) {\n                result = {\n                    value: object[key],\n                    type: typeof object[key],\n                    keys: rootKeys.split('.').length,\n                    first_key: rootKeys.split('.')[0],\n                    last_key: (rootKeys.split('.').length > 0) ? rootKeys.split('.')[rootKeys.split('.').length - 1] : rootKeys.split('.')[0],\n                    root: rootKeys\n                }\n            }\n        }\n\n        //ricerca della chiave\n        if (!result || what.endsWith('>')) {\n            for (let k in object) {\n                if (object.hasOwnProperty(k) && typeof object[k] === 'object') {\n                    searchDeep(object[k], root(k))\n                }\n            }\n        }\n    }\n\n    //inizia la ricerca\n    searchDeep(object)\n\n    //restituisci il risultato\n    switch (what.replace('>', '')) {\n        case \"$type\":\n            return (!result ? null : result.type)\n        case \"$keys\":\n            return (!result ? null : result.keys)\n        case \"$first_key\":\n            return (!result ? null : result.first_key)\n        case \"$last_key\":\n            return (!result ? null : result.last_key)\n        case \"$root\":\n            return (!result ? null : result.root)\n        case \"$boolean\":\n            return !!result\n        case \"$object\":\n            return (!result ? null : result)\n        default:\n            return (!result ? null : result.value)\n    }\n}\n\n/**\n * Verifica se un oggetto è di tipo numerico\n * @param {object} object Oggetto da verificare\n */\nfunction IsNumber(object) {\n    if (object === null || object === undefined) return false\n    if ((typeof object === 'number' && isFinite(object)) || Object.prototype.toString.apply(object) === '[object Number]') return true\n    return (typeof object === \"string\" && !isNaN(object) && !isNaN(parseFloat(object)))\n}\n\n////////////////////////////////////////////////////////////////////\n////////////////////////////////////////////////////////////////////\n////////////////////////////////////////////////////////////////////\n\nvar latitude = env.get(\"latitude\").trim() || null\nvar longitude = env.get(\"longitude\").trim() || null\n\n////////////////////////////////////////////////////////////////////\n////////////////////////////////////////////////////////////////////\n////////////////////////////////////////////////////////////////////\n\nif (latitude !== null && longitude !== null) {\n    latitude = Template(`{{${latitude}}}`)\n    longitude = Template(`{{${longitude}}}`)\n\n    if (IsNumber(latitude) && IsNumber(longitude)) {\n        latitude = parseFloat(latitude)\n        longitude = parseFloat(longitude)\n        node.status({ fill: \"blue\", shape: \"ring\", text: \"Request\" })\n        msg.original_message = RED.util.cloneMessage(msg)\n        msg.method = 'GET'\n        //https://open-meteo.com/en/docs#api-documentation\n        msg.url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&models=best_match&current_weather=true&timezone=auto`\n        return [msg, null]\n    }\n}\n\nnode.status({ fill: \"blue\", shape: \"dot\", text: \"Ready\" })\nreturn [null, msg]",
+        "outputs": 2,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 240,
+        "y": 80,
+        "wires": [
+            [
+                "9b93ce4658ef6933"
+            ],
+            []
+        ],
+        "outputLabels": [
+            "Request",
+            "Continue"
+        ]
+    },
+    {
+        "id": "9b93ce4658ef6933",
+        "type": "http request",
+        "z": "be06336523247ac6",
+        "name": "open-meteo.com",
+        "method": "use",
+        "ret": "txt",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "authType": "",
+        "senderr": false,
+        "x": 430,
+        "y": 40,
+        "wires": [
+            [
+                "ad8b5c77a2084833"
+            ]
+        ]
+    },
+    {
+        "id": "b06e1993859f7687",
+        "type": "trigger",
+        "z": "be06336523247ac6",
+        "name": "Reset status node",
+        "op1": "",
+        "op2": "0",
+        "op1type": "nul",
+        "op2type": "str",
+        "duration": "5",
+        "extend": true,
+        "overrideDelay": false,
+        "units": "s",
+        "reset": "",
+        "bytopic": "all",
+        "topic": "topic",
+        "outputs": 1,
+        "x": 135,
+        "y": 140,
+        "wires": [
+            [
+                "9fa25482a9f56fef"
+            ]
+        ],
+        "l": false
+    },
+    {
+        "id": "9fa25482a9f56fef",
+        "type": "function",
+        "z": "be06336523247ac6",
+        "name": "Node status",
+        "func": "node.status({ fill: \"blue\", shape: \"ring\", text: \"Ready\" })",
+        "outputs": 0,
+        "noerr": 0,
+        "initialize": "// Code added here will be run once\n// whenever the node is started.\nnode.status({ fill: \"green\", shape: \"ring\", text: \"Ready\" })",
+        "finalize": "",
+        "libs": [],
+        "x": 250,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "e48125a6c2df571c",
+        "type": "delay",
+        "z": "be06336523247ac6",
+        "name": "",
+        "pauseType": "rate",
+        "timeout": "500",
+        "timeoutUnits": "milliseconds",
+        "rate": "2",
+        "nbRateUnits": "1",
+        "rateUnits": "second",
+        "randomFirst": "250",
+        "randomLast": "500",
+        "randomUnits": "milliseconds",
+        "drop": false,
+        "allowrate": false,
+        "outputs": 1,
+        "x": 135,
+        "y": 80,
+        "wires": [
+            [
+                "eb7f0eae089a1544"
+            ]
+        ],
+        "l": false
+    },
+    {
+        "id": "50adf29db6d52425",
+        "type": "status",
+        "z": "be06336523247ac6",
+        "name": "",
+        "scope": [
+            "9b93ce4658ef6933",
+            "9fa25482a9f56fef",
+            "eb7f0eae089a1544",
+            "ad8b5c77a2084833"
+        ],
+        "x": 400,
+        "y": 140,
+        "wires": [
+            [
+                "ff3ffe8079ea5eb5"
+            ]
+        ]
+    },
+    {
+        "id": "ff3ffe8079ea5eb5",
+        "type": "delay",
+        "z": "be06336523247ac6",
+        "name": "Rate limit",
+        "pauseType": "rate",
+        "timeout": "5",
+        "timeoutUnits": "minutes",
+        "rate": "2",
+        "nbRateUnits": "1",
+        "rateUnits": "second",
+        "randomFirst": "1",
+        "randomLast": "5",
+        "randomUnits": "seconds",
+        "drop": false,
+        "allowrate": false,
+        "outputs": 1,
+        "x": 575,
+        "y": 140,
+        "wires": [
+            []
+        ],
+        "l": false
+    },
+    {
+        "id": "ad8b5c77a2084833",
+        "type": "function",
+        "z": "be06336523247ac6",
+        "name": "Response",
+        "func": "//https://open-meteo.com/en/docs\n\n////////////////////////////////////////////////////////////////////\n////////////////////////////////////////////////////////////////////\n////////////////////////////////////////////////////////////////////\n\n/**\n * Converte JSON String >> Object\n * @param {string} json_string JSON String\n */\nfunction JSO(json_string) {\n    try {\n        if (json_string === null || json_string === undefined || typeof json_string !== 'string') return json_string\n        return JSON.parse(json_string)\n    } catch (error) {\n        return json_string\n    }\n}\n\n////////////////////////////////////////////////////////////////////\n////////////////////////////////////////////////////////////////////\n////////////////////////////////////////////////////////////////////\n\n/**\n* @param {number} weathercode Descrizione meteo\n*/\nfunction GetWeatherText(weathercode) {\n    switch (weathercode) {\n        case 0:\n            return 'Cielo sereno.'\n        case 1:\n            return 'Prevalentemente sereno, parzialmente nuvoloso a tratti coperto.'\n        case 2:\n            return 'Prevalentemente sereno, parzialmente nuvoloso a tratti coperto.'\n        case 3:\n            return 'Prevalentemente sereno, parzialmente nuvoloso a tratti coperto.'\n        case 45:\n            return 'Nebbia di brina depositante.'\n        case 48:\n            return 'Nebbia di brina depositante.'\n        case 51:\n            return 'Pioggerella con intensità leggera, moderata e densa.'\n        case 53:\n            return 'Pioggerella con intensità leggera, moderata e densa.'\n        case 55:\n            return 'Pioggerella con intensità leggera, moderata e densa.'\n        case 56:\n            return 'Pioggia gelata con intensità leggera e densa.'\n        case 57:\n            return 'Pioggia gelata con intensità leggera e densa.'\n        case 61:\n            return 'Pioggia con intensità leggera, moderata e forte'\n        case 63:\n            return 'Pioggia con intensità leggera, moderata e forte.'\n        case 65:\n            return 'Pioggia con intensità leggera, moderata e forte.'\n        case 66:\n            return 'Pioggia gelata con intensità leggera e pesante.'\n        case 67:\n            return 'Pioggia gelata con intensità leggera e pesante.'\n        case 71:\n            return 'Nevicate con intensità leggera, moderata e forte.'\n        case 73:\n            return 'Nevicate con intensità leggera, moderata e forte.'\n        case 75:\n            return 'Nevicate con intensità leggera, moderata e forte.'\n        case 77:\n            return 'Granelli di neve.'\n        case 80:\n            return 'Rovesci di pioggia leggeri, moderati e violenti.'\n        case 81:\n            return 'Rovesci di pioggia leggeri, moderati e violenti.'\n        case 82:\n            return 'Rovesci di pioggia leggeri, moderati e violenti.'\n        case 85:\n            return 'Nevicate leggere e intense.'\n        case 86:\n            return 'Nevicate leggere e intense.'\n        case 95:\n            return 'Temporale debole o moderato.'\n        case 96:\n            return 'Temporale con lieve e forte grandine.'\n        case 99:\n            return 'Temporale con lieve e forte grandine.'\n        default:\n            return null\n    }\n}\n\n/**\n* @param {number} weathercode Icona meteo\n*/\nfunction GetWeatherIcon(weathercode) {\n    switch (weathercode) {\n        case 0:\n            return '☀️'\n        case 1:\n            return '🌤'\n        case 2:\n            return '🌤'\n        case 3:\n            return '🌤'\n        case 45:\n            return '❄️'\n        case 48:\n            return '❄️'\n        case 51:\n            return '🌦'\n        case 53:\n            return '🌦'\n        case 55:\n            return '🌦'\n        case 56:\n            return '🌨'\n        case 57:\n            return '🌨'\n        case 61:\n            return '🌧'\n        case 63:\n            return '🌧'\n        case 65:\n            return '🌧'\n        case 66:\n            return '🌨'\n        case 67:\n            return '🌨'\n        case 71:\n            return '☃️'\n        case 73:\n            return '☃️'\n        case 75:\n            return '☃️'\n        case 77:\n            return '❄️'\n        case 80:\n            return '⛈'\n        case 81:\n            return '⛈'\n        case 82:\n            return '⛈'\n        case 85:\n            return '⛄️'\n        case 86:\n            return '⛄️'\n        case 95:\n            return '🌩'\n        case 96:\n            return '⛈'\n        case 99:\n            return '⛈'\n        default:\n            return null\n    }\n}\n\n////////////////////////////////////////////////////////////////////\n////////////////////////////////////////////////////////////////////\n////////////////////////////////////////////////////////////////////\n\nif (msg.statusCode == 200 && msg.payload) {\n    var response = JSO(msg.payload)\n\n    if (response.current_weather && GetWeatherText(response.current_weather.weathercode)) {\n        const MESSAGE = env.get(\"message\").trim() || 'meteo'        \n        node.status({ fill: \"blue\", shape: \"dot\", text: \"Response OK\" })\n\n        let meteo = response.current_weather\n        meteo.text = GetWeatherText(response.current_weather.weathercode)\n        meteo.icon = GetWeatherIcon(response.current_weather.weathercode)\n        meteo.description = 'la temperatura è di ' + meteo.temperature + ' °C con vento ' + meteo.windspeed + ' km/h. ' + meteo.text\n        \n        RED.util.setMessageProperty(msg.original_message, MESSAGE, meteo, true)\n    } else {\n        node.status({ fill: \"red\", shape: \"dot\", text: \"No weather information\" })\n    }\n} else if (msg.statusCode != 200) {\n    node.status({ fill: \"red\", shape: \"dot\", text: \"Error status code \" + msg.statusCode })\n}\n\nreturn msg.original_message",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 610,
+        "y": 40,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "80a1712c85c98e95",
+        "type": "tab",
+        "label": "Flow 2",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "ae7c92b1d0b4bc91",
+        "type": "subflow:be06336523247ac6",
+        "z": "80a1712c85c98e95",
+        "name": "",
+        "x": 560,
+        "y": 240,
+        "wires": [
+            []
+        ]
+    }
+]
